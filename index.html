@@ -2,92 +2,264 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GCS - Ground Control Station</title>
-  <link rel="stylesheet" href="style.css">
-  <!-- Подключение 3D-библиотеки Three.js -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>FPV Ground Control Station</title>
+  
+  <!-- Подключение Three.js 3D Движка -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      background-color: #050b14;
+      color: #00e5ff;
+      font-family: 'Segoe UI', Roboto, monospace;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* Основной контейнер экрана */
+    #gcs-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Видеопоток / 3D Хост */
+    #video-feed-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    #camera-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Верхняя панель OSD */
+    .osd-header {
+      position: absolute;
+      top: 15px;
+      left: 20px;
+      right: 20px;
+      z-index: 10;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(10, 16, 29, 0.75);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      padding: 10px 20px;
+      border-radius: 8px;
+      backdrop-filter: blur(5px);
+    }
+
+    .telemetry-group {
+      display: flex;
+      gap: 20px;
+    }
+
+    .telemetry-item {
+      font-size: 14px;
+      font-weight: bold;
+    }
+
+    .telemetry-value {
+      color: #ffffff;
+    }
+
+    /* Боковые приборы (PFD и Карта) */
+    .osd-panels {
+      position: absolute;
+      top: 80px;
+      right: 20px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    .panel-box {
+      width: 200px;
+      height: 130px;
+      background: rgba(10, 16, 29, 0.75);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    canvas.widget-canvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Кнопки управления */
+    .controls-panel {
+      position: absolute;
+      top: 80px;
+      left: 20px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .btn-action {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid #00e5ff;
+      color: #00e5ff;
+      padding: 10px 15px;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-action:active {
+      background: #00e5ff;
+      color: #000;
+    }
+
+    /* ==========================================
+       УВЕЛИЧЕННЫЕ СТИКИ УПРАВЛЕНИЯ (140px)
+       ========================================== */
+    .joysticks-wrapper {
+      position: absolute;
+      bottom: 30px;
+      left: 30px;
+      right: 30px;
+      z-index: 20;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+    }
+
+    .joystick-base {
+      width: 140px !important;
+      height: 140px !important;
+      border-radius: 50%;
+      background: rgba(15, 23, 42, 0.85);
+      border: 2px solid rgba(0, 229, 255, 0.6);
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.8), inset 0 0 10px rgba(0, 229, 255, 0.3);
+      position: relative;
+      touch-action: none;
+      pointer-events: auto;
+    }
+
+    .joystick-thumb {
+      width: 60px !important;
+      height: 60px !important;
+      border-radius: 50%;
+      background: radial-gradient(circle, #00e5ff 0%, #0077b6 100%);
+      box-shadow: 0 0 15px rgba(0, 229, 255, 0.9);
+      border: 2px solid #ffffff;
+      position: absolute;
+      top: calc(50% - 30px);
+      left: calc(50% - 30px);
+      pointer-events: none;
+    }
+
+    .stick-label {
+      position: absolute;
+      bottom: -22px;
+      width: 100%;
+      text-align: center;
+      font-size: 11px;
+      color: rgba(0, 229, 255, 0.8);
+      letter-spacing: 1px;
+    }
+  </style>
 </head>
 <body>
 
-  <!-- Верхняя панель статуса систем -->
-  <header id="top-bar">
-    <div class="system-status">
-      <span class="indicator green">●</span> LINK: <span id="val-rssi">98%</span>
-      <span class="indicator green">●</span> GPS: <span id="val-sats">18 SATS</span>
-    </div>
-    <div class="flight-mode">
-      РЕЖИМ: <span id="val-mode" class="highlight">AUTO (GCS CONTROL)</span>
-    </div>
-    <div class="battery-status">
-      БАТАРЕЯ: <span id="val-bat">88%</span> (22.4 V)
-    </div>
-  </header>
-
-  <!-- Главный контейнер НСУ -->
-  <main id="gcs-workspace">
-    
-    <!-- Левая область: Видеопоток камеры и OSD -->
-    <section id="video-feed-container">
+  <div id="gcs-container">
+    <!-- 3D Экран / Камера -->
+    <div id="video-feed-container">
       <canvas id="camera-canvas"></canvas>
+    </div>
 
-      <!-- Прицел оператора -->
-      <div id="reticle">
-        <div class="cross-line h"></div>
-        <div class="cross-line v"></div>
-        <div id="target-box"></div>
+    <!-- Верхний OSD -->
+    <div class="osd-header">
+      <div class="telemetry-group">
+        <div class="telemetry-item">MODE: <span id="val-mode" class="telemetry-value">FPV ACRO</span></div>
+        <div class="telemetry-item">CAM: <span id="cam-mode-text" class="telemetry-value">DAY (OPTICAL)</span></div>
       </div>
-
-      <!-- Информационный оверлей OSD -->
-      <div id="camera-osd">
-        <div class="osd-top-left">
-          CAM: <span id="cam-mode-text">DAY (OPTICAL)</span>
-        </div>
-        <div class="osd-top-right">
-          LAT: <span id="drone-lat">55.7512</span> | LON: <span id="drone-lon">37.6184</span>
-        </div>
-        <div class="osd-bottom-left">
-          ALT: <span id="drone-alt">120</span> m | SPEED: <span id="drone-speed">15.0</span> m/s
-        </div>
-        <div class="osd-bottom-right">
-          RNG TO TARGET: <span id="target-dist">342</span> m
-        </div>
+      <div class="telemetry-group">
+        <div class="telemetry-item">LAT: <span id="drone-lat" class="telemetry-value">55.75124</span></div>
+        <div class="telemetry-item">LON: <span id="drone-lon" class="telemetry-value">37.61842</span></div>
+        <div class="telemetry-item">ALT: <span id="drone-alt" class="telemetry-value">30.0</span>m</div>
+        <div class="telemetry-item">SPD: <span id="drone-speed" class="telemetry-value">0.0</span>m/s</div>
+        <div class="telemetry-item">DIST: <span id="target-dist" class="telemetry-value">600</span>m</div>
       </div>
+    </div>
 
-      <!-- Виртуальные стики для сенсора и мыши -->
-      <div id="joysticks-layer">
-        <div id="joy-left" class="joystick-base">
-          <div class="joystick-thumb"></div>
-          <span class="joy-label">ГАЗ / РЫСКАНИЕ</span>
-        </div>
-        <div id="joy-right" class="joystick-base">
-          <div class="joystick-thumb"></div>
-          <span class="joy-label">ТАНГАЖ / КРЕН</span>
-        </div>
-      </div>
-    </section>
+    <!-- Левая панель действий -->
+    <div class="controls-panel">
+      <button id="btn-mode" class="btn-action">СМЕНА КАМЕРЫ (DAY/IR)</button>
+      <button id="btn-rtl" class="btn-action">ВОЗВРАТ ДОМОЙ (RTL)</button>
+    </div>
 
-    <!-- Правая панель: Карта, Авиагоризонт, Команды -->
-    <aside id="tactical-panel">
+    <!-- Правая панель (PFD и Карта) -->
+    <div class="osd-panels">
       <div class="panel-box">
-        <h3>ТАКТИЧЕСКАЯ КАРТА</h3>
-        <canvas id="map-canvas"></canvas>
+        <canvas id="pfd-canvas" class="widget-canvas"></canvas>
       </div>
-
       <div class="panel-box">
-        <h3>АВИАГОРИЗОНТ (PFD)</h3>
-        <canvas id="pfd-canvas"></canvas>
+        <canvas id="map-canvas" class="widget-canvas"></canvas>
+      </div>
+    </div>
+
+    <!-- Увеличенные Стики Управления -->
+    <div class="joysticks-wrapper">
+      <!-- Левый Стик: ГАЗ (Y) / РЫСКАНИЕ (X) -->
+      <div id="joy-left" class="joystick-base">
+        <div class="joystick-thumb"></div>
+        <div class="stick-label">ГАЗ / YAW</div>
       </div>
 
-      <div class="panel-box controls-box">
-        <h3>КОМАНДЫ НСУ</h3>
-        <button id="btn-mode">РЕЖИМ КАМЕРЫ (IR / DAY)</button>
-        <button id="btn-rtl" class="warning">ВОЗВРАТ ДОМОЙ (RTL)</button>
+      <!-- Правый Стик: ТАНГАЖ (Y) / КРЕН (X) -->
+      <div id="joy-right" class="joystick-base">
+        <div class="joystick-thumb"></div>
+        <div class="stick-label">PITCH / ROLL</div>
       </div>
-    </aside>
+    </div>
+  </div>
 
-  </main>
+  <!-- Скрипт FPV Логики -->
+  <script>
+    // ==========================================
+    // 1. СОСТОЯНИЕ СИСТЕМЫ И ТЕЛЕМЕТРИЯ
+    // ==========================================
+    const state = {
+      cameraMode: 'DAY',
+      flightMode: 'FPV ACRO',
+      lat: 55.75124,
+      lon: 37.61842,
+      alt: 30.0,
+      speed: 0.0,
+      pitch: 0,
+      roll: 0,
+      yaw: 0,
+      joystickLeft: { x: 0, y: 0 },
+      joystickRight: { x: 0, y: 0 },
+      keys: {}
+    };
 
-  <script src="js/app.js"></script>
-</body>
-</html>
+    const elCamModeText = document.getElementById('cam-mode-text');
+    const elValMode = document.getElementById('val
