@@ -1,5 +1,5 @@
 /**
- * Ground Control Station (GCS) - Полноценная 3D-симуляция полёта БПЛА
+ * Ground Control Station (GCS) - Прямой полет БПЛА от первого лица
  */
 
 // --- Состояние систем и Телеметрия ---
@@ -9,11 +9,13 @@ const state = {
   lat: 55.75124,
   lon: 37.61842,
   alt: 120,          // Высота (м)
-  speed: 18.0,        // Базовая скорость полёта (м/с)
+  speed: 25.0,       // Скорость полета (м/с)
   battery: 88,
-  pitch: 0,           // Тангаж (град)
-  roll: 0,            // Крен (град)
-  yaw: 0,             // Курс (град)
+  pitch: 0,          // Тангаж
+  roll: 0,           // Крен
+  yaw: 0,            // Курс
+  posX: 0,           // Позиция в 3D
+  posZ: 0,
   joystickLeft: { x: 0, y: 0 },
   joystickRight: { x: 0, y: 0 },
   keys: {}
@@ -39,10 +41,9 @@ const container = document.getElementById('video-feed-container');
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0a101d);
-scene.fog = new THREE.FogExp2(0x0a101d, 0.0015);
+scene.fog = new THREE.FogExp2(0x0a101d, 0.001);
 
-const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 4000);
-camera.position.set(0, 20, 0);
+const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 5000);
 
 const renderer = new THREE.WebGLRenderer({ canvas: cameraCanvas, antialias: true });
 renderer.setSize(container.clientWidth, container.clientHeight);
@@ -56,41 +57,40 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
 dirLight.position.set(200, 500, 200);
 scene.add(dirLight);
 
-// Бесконечная сетка земли
-const gridHelper = new THREE.GridHelper(4000, 100, 0x00e5ff, 0x1f2d3d);
+// Бесконечная сетка поверхности
+const gridHelper = new THREE.GridHelper(5000, 100, 0x00e5ff, 0x1f2d3d);
 gridHelper.position.y = 0;
 scene.add(gridHelper);
 
-// Генерация 3D-объектов на местности (дома и ориентиры)
+// Генерация 3D-ориентиров на местности
 const buildings = [];
 const buildingGeo = new THREE.BoxGeometry(1, 1, 1);
 const buildingMat = new THREE.MeshPhongMaterial({ color: 0x1a2d42 });
 
-for (let i = 0; i < 80; i++) {
+for (let i = 0; i < 100; i++) {
   const mesh = new THREE.Mesh(buildingGeo, buildingMat);
   const scaleX = 20 + Math.random() * 30;
-  const scaleY = 15 + Math.random() * 50;
+  const scaleY = 20 + Math.random() * 60;
   const scaleZ = 20 + Math.random() * 30;
   mesh.scale.set(scaleX, scaleY, scaleZ);
 
   mesh.position.set(
-    (Math.random() - 0.5) * 2500,
+    (Math.random() - 0.5) * 3000,
     scaleY / 2,
-    (Math.random() - 0.5) * 2500
+    (Math.random() - 0.5) * 3000
   );
   scene.add(mesh);
   buildings.push(mesh);
 }
 
-// Подвижная цель (Красный маркер)
-const targetGeometry = new THREE.BoxGeometry(15, 15, 15);
+// Красный маркер цели впереди
+const targetGeometry = new THREE.BoxGeometry(20, 20, 20);
 const dayMaterial = new THREE.MeshPhongMaterial({ color: 0xff3333 });
 const irMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff66, wireframe: true });
 const targetMesh = new THREE.Mesh(targetGeometry, dayMaterial);
-targetMesh.position.set(0, 10, -500);
+targetMesh.position.set(0, 10, -800);
 scene.add(targetMesh);
 
-// Адаптация под размер окна
 window.addEventListener('resize', () => {
   const width = container.clientWidth;
   const height = container.clientHeight;
@@ -144,7 +144,7 @@ function drawPFD() {
 
   pfdCtx.restore();
 
-  // Прицельная метка ЛА
+  // Перекрестие ЛА
   pfdCtx.strokeStyle = '#00e5ff';
   pfdCtx.lineWidth = 3;
   pfdCtx.beginPath();
@@ -188,7 +188,7 @@ function drawMap() {
     mapCtx.stroke();
   }
 
-  // Траектория полета
+  // Траектория
   if (mapTrail.length > 1) {
     mapCtx.strokeStyle = 'rgba(0, 229, 255, 0.7)';
     mapCtx.lineWidth = 2;
@@ -200,7 +200,7 @@ function drawMap() {
     mapCtx.stroke();
   }
 
-  // Курсор БПЛА
+  // Курсор дрона
   mapCtx.save();
   mapCtx.translate(cx, cy);
   mapCtx.rotate((state.yaw * Math.PI) / 180);
@@ -261,7 +261,6 @@ function setupJoystick(containerId, callback) {
 setupJoystick('joy-left', (x, y) => { state.joystickLeft.x = x; state.joystickLeft.y = y; });
 setupJoystick('joy-right', (x, y) => { state.joystickRight.x = x; state.joystickRight.y = y; });
 
-// Кнопки ИК / RTL
 if (btnMode) {
   btnMode.addEventListener('click', () => {
     state.cameraMode = state.cameraMode === 'DAY' ? 'IR' : 'DAY';
@@ -283,7 +282,7 @@ if (btnRtl) {
 }
 
 // ==========================================
-// 5. ДИНАМИКА И АНИМАЦИЯ ПОЛЁТА
+// 5. ДВИЖЕНИЕ В ВОРЛД-СПЕЙСЕ (ПОЛЕТ ВПЕРЕД)
 // ==========================================
 let lastTime = performance.now();
 
@@ -294,7 +293,7 @@ function animate() {
   const delta = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
 
-  // Обработка клавиатуры + стиков
+  // Ввод со стиков и клавиатуры
   let inputRoll = state.joystickRight.x;
   let inputPitch = state.joystickRight.y;
   let inputYaw = state.joystickLeft.x;
@@ -307,18 +306,76 @@ function animate() {
   if (state.keys['KeyQ']) inputYaw = -1;
   if (state.keys['KeyE']) inputYaw = 1;
 
-  // Расчет углов
-  state.roll = inputRoll * 30;
+  // Рассчет углов
+  state.roll = inputRoll * 25;
   state.pitch = -inputPitch * 20;
-  state.yaw += inputYaw * 40 * delta;
+  state.yaw += inputYaw * 45 * delta;
 
-  // Высота и скорость
-  state.alt = Math.max(10, Math.min(800, state.alt - inputAlt * 30 * delta));
-  state.speed = Math.max(0, Math.min(60, 20.0 - state.pitch * 0.8));
+  // Расчет скорости и высоты
+  state.alt = Math.max(10, Math.min(800, state.alt - inputAlt * 40 * delta));
+  state.speed = Math.max(5, Math.min(70, 25.0 - state.pitch * 1.2));
 
-  // ПЕРЕМЕЩЕНИЕ КАМЕРЫ В 3D-ПРОСТРАНСТВЕ
+  // ВЕКТОР ДВИЖЕНИЯ ВПЕРЕД (БЕЗ ВРАЩЕНИЯ ВОКРУГ ЦЕЛИ)
   const radYaw = (state.yaw * Math.PI) / 180;
-  const moveDist = state.speed * delta * 10;
+  const moveDist = state.speed * delta * 12;
 
-  camera.position.x += Math.sin(radYaw) * moveDist;
-  camera.position.z -= Math.cos(
+  state.posX += Math.sin(radYaw) * moveDist;
+  state.posZ -= Math.cos(radYaw) * moveDist;
+
+  // Установка позиции камеры дрона
+  camera.position.x = state.posX;
+  camera.position.z = state.posZ;
+  camera.position.y = state.alt * 0.25;
+
+  // Поворот камеры по курсу, тангажу и крен
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = -radYaw;
+  camera.rotation.x = (state.pitch * Math.PI / 180) * 0.3;
+  camera.rotation.z = -(state.roll * Math.PI / 180) * 0.4;
+
+  // Закольцовка зданий вокруг летающего дрона
+  buildings.forEach(b => {
+    let dx = b.position.x - camera.position.x;
+    let dz = b.position.z - camera.position.z;
+
+    if (dz > 1500) b.position.z -= 3000;
+    if (dz < -1500) b.position.z += 3000;
+    if (dx > 1500) b.position.x -= 3000;
+    if (dx < -1500) b.position.x += 3000;
+  });
+
+  // Закольцовка сетки земли
+  gridHelper.position.x = Math.floor(camera.position.x / 50) * 50;
+  gridHelper.position.z = Math.floor(camera.position.z / 50) * 50;
+
+  // Вращение маркера цели
+  targetMesh.rotation.y += delta;
+
+  // Обновление GPS широты/долготы
+  state.lat += Math.cos(radYaw) * state.speed * delta * 0.00001;
+  state.lon += Math.sin(radYaw) * state.speed * delta * 0.00001;
+
+  // Запись следа на карте
+  if (Math.random() < 0.2) {
+    mapTrail.push({
+      x: (camera.position.x * 0.03) % 70,
+      y: (camera.position.z * 0.03) % 70
+    });
+    if (mapTrail.length > 35) mapTrail.shift();
+  }
+
+  // Отрисовка
+  renderer.render(scene, camera);
+  drawPFD();
+  drawMap();
+
+  // Обновление OSD
+  if (elLat) elLat.innerText = state.lat.toFixed(5);
+  if (elLon) elLon.innerText = state.lon.toFixed(5);
+  if (elAlt) elAlt.innerText = state.alt.toFixed(1);
+  if (elSpeed) elSpeed.innerText = state.speed.toFixed(1);
+  if (elTargetDist) elTargetDist.innerText = Math.max(5, Math.floor(camera.position.distanceTo(targetMesh.position))).toString();
+}
+
+// Запуск
+animate();
