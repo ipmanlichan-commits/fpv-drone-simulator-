@@ -2,10 +2,10 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>FPV Ground Control Station</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>FPV Simulator GCS</title>
   
-  <!-- Подключение Three.js 3D Движка -->
+  <!-- Подключение Three.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
   <style>
@@ -15,251 +15,318 @@
       padding: 0;
       user-select: none;
       -webkit-user-select: none;
+      touch-action: none; /* Запрет скролла страницы на смартфонах */
     }
 
-    body {
-      background-color: #050b14;
-      color: #00e5ff;
-      font-family: 'Segoe UI', Roboto, monospace;
+    body, html {
+      width: 100%;
+      height: 100%;
       overflow: hidden;
-      width: 100vw;
-      height: 100vh;
+      background-color: #050b14;
+      font-family: monospace;
+      color: #00e5ff;
     }
 
-    /* Основной контейнер экрана */
-    #gcs-container {
-      position: relative;
-      width: 100vw;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
+    /* Экран ошибки / загрузки */
+    #status-overlay {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.8);
+      border: 1px solid #00e5ff;
+      padding: 6px 16px;
+      border-radius: 20px;
+      z-index: 999;
+      font-size: 12px;
+      pointer-events: none;
     }
 
-    /* Видеопоток / 3D Хост */
-    #video-feed-container {
+    /* Canvas 3D */
+    #camera-canvas {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
       z-index: 1;
-    }
-
-    #camera-canvas {
-      width: 100%;
-      height: 100%;
       display: block;
     }
 
-    /* Верхняя панель OSD */
-    .osd-header {
+    /* OSD Телеметрия */
+    .osd-layer {
       position: absolute;
-      top: 15px;
-      left: 20px;
-      right: 20px;
+      top: 10px;
+      left: 10px;
+      right: 10px;
       z-index: 10;
       display: flex;
       justify-content: space-between;
-      align-items: center;
-      background: rgba(10, 16, 29, 0.75);
+      pointer-events: none;
+      font-size: 13px;
+      background: rgba(10, 16, 29, 0.6);
+      padding: 8px 12px;
+      border-radius: 6px;
       border: 1px solid rgba(0, 229, 255, 0.3);
-      padding: 10px 20px;
-      border-radius: 8px;
-      backdrop-filter: blur(5px);
     }
 
-    .telemetry-group {
-      display: flex;
-      gap: 20px;
-    }
+    .osd-val { color: #fff; font-weight: bold; }
 
-    .telemetry-item {
-      font-size: 14px;
-      font-weight: bold;
-    }
-
-    .telemetry-value {
-      color: #ffffff;
-    }
-
-    /* Боковые приборы (PFD и Карта) */
-    .osd-panels {
+    /* Панель кнопок */
+    .btn-panel {
       position: absolute;
-      top: 80px;
-      right: 20px;
+      top: 60px;
+      left: 10px;
       z-index: 10;
       display: flex;
       flex-direction: column;
-      gap: 15px;
+      gap: 8px;
     }
 
-    .panel-box {
-      width: 200px;
-      height: 130px;
-      background: rgba(10, 16, 29, 0.75);
-      border: 1px solid rgba(0, 229, 255, 0.3);
-      border-radius: 8px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    canvas.widget-canvas {
-      width: 100%;
-      height: 100%;
-    }
-
-    /* Кнопки управления */
-    .controls-panel {
-      position: absolute;
-      top: 80px;
-      left: 20px;
-      z-index: 10;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .btn-action {
+    .btn {
       background: rgba(15, 23, 42, 0.85);
       border: 1px solid #00e5ff;
       color: #00e5ff;
-      padding: 10px 15px;
-      border-radius: 6px;
-      font-weight: bold;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 11px;
       cursor: pointer;
-      transition: all 0.2s;
     }
 
-    .btn-action:active {
-      background: #00e5ff;
-      color: #000;
-    }
-
-    /* ==========================================
-       УВЕЛИЧЕННЫЕ СТИКИ УПРАВЛЕНИЯ (140px)
-       ========================================== */
-    .joysticks-wrapper {
+    /* СТИКИ УПРАВЛЕНИЯ (140px) */
+    .joystick-zone {
       position: absolute;
-      bottom: 30px;
-      left: 30px;
-      right: 30px;
+      bottom: 25px;
+      left: 20px;
+      right: 20px;
       z-index: 20;
       display: flex;
       justify-content: space-between;
-      align-items: center;
       pointer-events: none;
     }
 
     .joystick-base {
-      width: 140px !important;
-      height: 140px !important;
+      width: 140px;
+      height: 140px;
       border-radius: 50%;
       background: rgba(15, 23, 42, 0.85);
       border: 2px solid rgba(0, 229, 255, 0.6);
-      box-shadow: 0 0 20px rgba(0, 0, 0, 0.8), inset 0 0 10px rgba(0, 229, 255, 0.3);
+      box-shadow: 0 0 15px rgba(0, 229, 255, 0.3);
       position: relative;
-      touch-action: none;
       pointer-events: auto;
+      touch-action: none;
     }
 
     .joystick-thumb {
-      width: 60px !important;
-      height: 60px !important;
+      width: 50px;
+      height: 50px;
       border-radius: 50%;
-      background: radial-gradient(circle, #00e5ff 0%, #0077b6 100%);
-      box-shadow: 0 0 15px rgba(0, 229, 255, 0.9);
-      border: 2px solid #ffffff;
+      background: #00e5ff;
+      box-shadow: 0 0 10px #00e5ff;
       position: absolute;
-      top: calc(50% - 30px);
-      left: calc(50% - 30px);
+      top: 45px;
+      left: 45px;
       pointer-events: none;
     }
 
-    .stick-label {
+    .stick-title {
       position: absolute;
-      bottom: -22px;
+      bottom: -20px;
       width: 100%;
       text-align: center;
-      font-size: 11px;
-      color: rgba(0, 229, 255, 0.8);
-      letter-spacing: 1px;
+      font-size: 10px;
+      color: #00e5ff;
     }
   </style>
 </head>
 <body>
 
-  <div id="gcs-container">
-    <!-- 3D Экран / Камера -->
-    <div id="video-feed-container">
-      <canvas id="camera-canvas"></canvas>
+  <div id="status-overlay">СТАТУС: ИНИЦИАЛИЗАЦИЯ...</div>
+
+  <canvas id="camera-canvas"></canvas>
+
+  <div class="osd-layer">
+    <div>MODE: <span id="val-mode" class="osd-val">FPV ACRO</span></div>
+    <div>ALT: <span id="val-alt" class="osd-val">30</span>m</div>
+    <div>SPD: <span id="val-spd" class="osd-val">0</span>m/s</div>
+  </div>
+
+  <div class="btn-panel">
+    <button class="btn" onclick="toggleCamMode()">РЕЖИМ КАМЕРЫ</button>
+  </div>
+
+  <div class="joystick-zone">
+    <div id="joy-left" class="joystick-base">
+      <div class="joystick-thumb"></div>
+      <div class="stick-title">ГАЗ / YAW</div>
     </div>
-
-    <!-- Верхний OSD -->
-    <div class="osd-header">
-      <div class="telemetry-group">
-        <div class="telemetry-item">MODE: <span id="val-mode" class="telemetry-value">FPV ACRO</span></div>
-        <div class="telemetry-item">CAM: <span id="cam-mode-text" class="telemetry-value">DAY (OPTICAL)</span></div>
-      </div>
-      <div class="telemetry-group">
-        <div class="telemetry-item">LAT: <span id="drone-lat" class="telemetry-value">55.75124</span></div>
-        <div class="telemetry-item">LON: <span id="drone-lon" class="telemetry-value">37.61842</span></div>
-        <div class="telemetry-item">ALT: <span id="drone-alt" class="telemetry-value">30.0</span>m</div>
-        <div class="telemetry-item">SPD: <span id="drone-speed" class="telemetry-value">0.0</span>m/s</div>
-        <div class="telemetry-item">DIST: <span id="target-dist" class="telemetry-value">600</span>m</div>
-      </div>
-    </div>
-
-    <!-- Левая панель действий -->
-    <div class="controls-panel">
-      <button id="btn-mode" class="btn-action">СМЕНА КАМЕРЫ (DAY/IR)</button>
-      <button id="btn-rtl" class="btn-action">ВОЗВРАТ ДОМОЙ (RTL)</button>
-    </div>
-
-    <!-- Правая панель (PFD и Карта) -->
-    <div class="osd-panels">
-      <div class="panel-box">
-        <canvas id="pfd-canvas" class="widget-canvas"></canvas>
-      </div>
-      <div class="panel-box">
-        <canvas id="map-canvas" class="widget-canvas"></canvas>
-      </div>
-    </div>
-
-    <!-- Увеличенные Стики Управления -->
-    <div class="joysticks-wrapper">
-      <!-- Левый Стик: ГАЗ (Y) / РЫСКАНИЕ (X) -->
-      <div id="joy-left" class="joystick-base">
-        <div class="joystick-thumb"></div>
-        <div class="stick-label">ГАЗ / YAW</div>
-      </div>
-
-      <!-- Правый Стик: ТАНГАЖ (Y) / КРЕН (X) -->
-      <div id="joy-right" class="joystick-base">
-        <div class="joystick-thumb"></div>
-        <div class="stick-label">PITCH / ROLL</div>
-      </div>
+    <div id="joy-right" class="joystick-base">
+      <div class="joystick-thumb"></div>
+      <div class="stick-title">PITCH / ROLL</div>
     </div>
   </div>
 
-  <!-- Скрипт FPV Логики -->
   <script>
-    // ==========================================
-    // 1. СОСТОЯНИЕ СИСТЕМЫ И ТЕЛЕМЕТРИЯ
-    // ==========================================
-    const state = {
-      cameraMode: 'DAY',
-      flightMode: 'FPV ACRO',
-      lat: 55.75124,
-      lon: 37.61842,
-      alt: 30.0,
-      speed: 0.0,
-      pitch: 0,
-      roll: 0,
-      yaw: 0,
-      joystickLeft: { x: 0, y: 0 },
-      joystickRight: { x: 0, y: 0 },
-      keys: {}
-    };
+    const statusEl = document.getElementById('status-overlay');
 
-    const elCamModeText = document.getElementById('cam-mode-text');
-    const elValMode = document.getElementById('val
+    // Проверка загрузки библиотеки Three.js
+    if (typeof THREE === 'undefined') {
+      statusEl.innerText = 'ОШИБКА: Three.js не загрузился! Проверьте интернет.';
+      statusEl.style.color = '#ff3333';
+    } else {
+      statusEl.innerText = 'СИСТЕМА ГОТОВА: ИСПОЛЬЗУЙТЕ СТИКИ';
+      initFPV();
+    }
+
+    function initFPV() {
+      // 1. Состояние
+      const state = {
+        joyLeft: { x: 0, y: 0 },
+        joyRight: { x: 0, y: 0 },
+        pitch: 0, roll: 0, yaw: 0,
+        alt: 30, speed: 0
+      };
+
+      // 2. Three.js Сцена
+      const canvas = document.getElementById('camera-canvas');
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0a101d);
+
+      const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 3000);
+
+      // Сетка земли
+      const grid = new THREE.GridHelper(3000, 60, 0x00e5ff, 0x1e293b);
+      scene.add(grid);
+
+      // Кубики-ориентиры
+      for (let i = 0; i < 40; i++) {
+        const geo = new THREE.BoxGeometry(20, 20 + Math.random() * 60, 20);
+        const mat = new THREE.MeshBasicMaterial({ color: 0x1e293b, wireframe: true });
+        const box = new THREE.Mesh(geo, mat);
+        box.position.set((Math.random() - 0.5) * 1500, box.geometry.parameters.height / 2, (Math.random() - 0.5) * 1500);
+        scene.add(box);
+      }
+
+      window.addEventListener('resize', () => {
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+      });
+
+      // 3. Обработка Стиков
+      function bindStick(id, onMove) {
+        const base = document.getElementById(id);
+        const thumb = base.querySelector('.joystick-thumb');
+        const maxR = 45;
+
+        function handlePointer(px, py) {
+          const rect = base.getBoundingClientRect();
+          let dx = px - (rect.left + rect.width / 2);
+          let dy = py - (rect.top + rect.height / 2);
+
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist > maxR) {
+            dx = (dx / dist) * maxR;
+            dy = (dy / dist) * maxR;
+          }
+
+          thumb.style.transform = `translate(${dx}px, ${dy}px)`;
+          onMove(dx / maxR, dy / maxR);
+        }
+
+        function reset() {
+          thumb.style.transform = 'translate(0px, 0px)';
+          onMove(0, 0);
+        }
+
+        base.addEventListener('pointerdown', (e) => {
+          base.setPointerCapture(e.pointerId);
+          handlePointer(e.clientX, e.clientY);
+        });
+
+        base.addEventListener('pointermove', (e) => {
+          if (base.hasPointerCapture(e.pointerId)) {
+            handlePointer(e.clientX, e.clientY);
+          }
+        });
+
+        base.addEventListener('pointerup', (e) => {
+          try { base.releasePointerCapture(e.pointerId); } catch(err){}
+          reset();
+        });
+      }
+
+      bindStick('joy-left', (x, y) => { state.joyLeft.x = x; state.joyLeft.y = y; });
+      bindStick('joy-right', (x, y) => { state.joyRight.x = x; state.joyRight.y = y; });
+
+      // 4. Физический цикл FPV
+      const pos = new THREE.Vector3(0, 30, 0);
+      const vel = new THREE.Vector3(0, 0, 0);
+      const rot = new THREE.Euler(0, 0, 0, 'YXZ');
+
+      const GRAVITY = 15;
+      const HOVER_THRUST = 15;
+      const MAX_THRUST = 25;
+      const DRAG = 0.98;
+      const CAM_TILT = 20 * (Math.PI / 180);
+
+      let lastTime = performance.now();
+
+      function loop() {
+        requestAnimationFrame(loop);
+
+        const now = performance.now();
+        const dt = Math.min((now - lastTime) / 1000, 0.1);
+        lastTime = now;
+
+        // Ввод
+        const pitchIn = state.joyRight.y;  // Наклон носа
+        const rollIn = state.joyRight.x;   // Крен
+        const yawIn = state.joyLeft.x;     // Разворот
+        const throttleIn = -state.joyLeft.y; // Тяга
+
+        // Вращение
+        rot.x += (-pitchIn * 1.2 - rot.x) * 8 * dt;
+        rot.z += (rollIn * 1.2 - rot.z) * 8 * dt;
+        rot.y -= yawIn * 1.8 * dt;
+
+        // Тяга моторов
+        const thrust = HOVER_THRUST + (throttleIn * MAX_THRUST);
+        const thrustDir = new THREE.Vector3(0, 1, 0);
+        const q = new THREE.Quaternion().setFromEuler(rot);
+        thrustDir.applyQuaternion(q);
+
+        const accel = thrustDir.multiplyScalar(Math.max(0, thrust));
+        accel.y -= GRAVITY;
+
+        vel.addScaledVector(accel, dt);
+        vel.multiplyScalar(Math.pow(DRAG, dt * 60));
+        pos.addScaledVector(vel, dt);
+
+        if (pos.y < 2) { pos.y = 2; vel.y = 0; }
+
+        // Позиция камеры
+        camera.position.copy(pos);
+        const camQ = q.clone();
+        camQ.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), CAM_TILT));
+        camera.quaternion.copy(camQ);
+
+        renderer.render(scene, camera);
+
+        // OSD
+        document.getElementById('val-alt').innerText = pos.y.toFixed(1);
+        document.getElementById('val-spd').innerText = vel.length().toFixed(1);
+      }
+
+      loop();
+    }
+
+    function toggleCamMode() {
+      alert("Смена режима камеры");
+    }
+  </script>
+</body>
+</html>
