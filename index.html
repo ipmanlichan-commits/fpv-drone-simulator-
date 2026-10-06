@@ -3,35 +3,83 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FPV Drone Simulator</title>
+  <title>GCS - Ground Control Station Simulator</title>
   <link rel="stylesheet" href="style.css">
-  <!-- Подключение 3D-движка Three.js -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 
-  <!-- Экран OSD (On-Screen Display) -->
-  <div id="osd">
-    <div id="crosshair">+</div>
+  <!-- Верхняя панель статуса систем (Top Bar) -->
+  <header id="top-bar">
+    <div class="system-status">
+      <span class="indicator green">●</span> LINK: <span id="val-rssi">98%</span>
+      <span class="indicator green">●</span> GPS: <span id="val-sats">16 SATS</span>
+    </div>
+    <div class="flight-mode">
+      РЕЖИМ: <span id="val-mode" class="highlight">AUTO (ROUTE)</span>
+    </div>
+    <div class="battery-status">
+      БАТАРЕЯ: <span id="val-bat">88%</span> (22.4 V)
+    </div>
+  </header>
+
+  <!-- Основной контейнер экрана НСУ -->
+  <main id="gcs-workspace">
     
-    <div id="telemetry">
-      <div>THROTTLE: <span id="val-throttle">0</span>%</div>
-      <div>ALT: <span id="val-alt">0.0</span> m</div>
-      <div>SPEED: <span id="val-speed">0.0</span> m/s</div>
-      <div>PITCH: <span id="val-pitch">0</span>° | ROLL: <span id="val-roll">0</span>°</div>
-    </div>
+    <!-- Главный окно: Оптический/Тепловизионный канал БПЛА -->
+    <section id="video-feed-container">
+      <canvas id="camera-canvas"></canvas>
 
-    <div id="controls-help">
-      <b>Управление (Mode 2):</b><br>
-      W / S — Газ (Throttle)<br>
-      A / D — Рыскание (Yaw)<br>
-      ↑ / ↓ — Тангаж (Pitch)<br>
-      ← / → — Крен (Roll)<br>
-      R — Сброс (Reset)
-    </div>
-  </div>
+      <!-- Прицельная сетка и прицел оператора -->
+      <div id="reticle">
+        <div class="cross-line h"></div>
+        <div class="cross-line v"></div>
+        <div id="target-box"></div>
+      </div>
 
-  <!-- Главный скрипт физики и рендера -->
+      <!-- OSD поверх видеопотока -->
+      <div id="camera-osd">
+        <div class="osd-top-left">
+          CAM: <span id="cam-mode-text">DAY (OPTICAL)</span> | ZOOM: <span id="cam-zoom">1.0x</span>
+        </div>
+        <div class="osd-top-right">
+          LAT: <span id="drone-lat">55.7512</span> | LON: <span id="drone-lon">37.6184</span>
+        </div>
+        <div class="osd-bottom-left">
+          ALT (AGL): <span id="drone-alt">120</span> m | GS: <span id="drone-speed">15.2</span> m/s
+        </div>
+        <div class="osd-bottom-right">
+          RNG TO TARGET: <span id="target-dist">342</span> m
+        </div>
+      </div>
+    </section>
+
+    <!-- Боковая панель: Тактическая карта и телеметрия -->
+    <aside id="tactical-panel">
+      
+      <!-- Тактический локатор / Карта маршрута -->
+      <div class="panel-box">
+        <h3>ТАКТИЧЕСКАЯ КАРТА</h3>
+        <canvas id="map-canvas"></canvas>
+      </div>
+
+      <!-- Авиагоризонт (PFD) -->
+      <div class="panel-box">
+        <h3>АВИАГОРИЗОНТ</h3>
+        <canvas id="pfd-canvas"></canvas>
+      </div>
+
+      <!-- Панель управления оператора -->
+      <div class="panel-box controls-box">
+        <h3>КОМАНДЫ НСУ</h3>
+        <button id="btn-mode">СМЕНА РЕЖИМА КАМЕРЫ (IR/DAY)</button>
+        <button id="btn-lock">ЗАХВАТ ЦЕЛИ</button>
+        <button id="btn-rtl" class="warning">ВОЗВРАТ ДОМОЙ (RTL)</button>
+      </div>
+
+    </aside>
+
+  </main>
+
   <script src="js/app.js"></script>
 </body>
 </html>
